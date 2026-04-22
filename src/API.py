@@ -32,6 +32,7 @@ def INIT(folder_name, db_name="Database"):
         os.makedirs(TARGET_DIR, exist_ok=True)
         DB = sqlite3.connect(DB_PATH)
         CUR = DB.cursor()
+        DB.row_factory = sqlite3.Row
         return True
     except Exception as e:
         print(f"Internal Trace: {e}")
@@ -123,33 +124,46 @@ def INSERT(table_name, Values: tuple, Column: tuple= ()):
 
     return True
 
-def GET(table_name: str, column="*", Search_Column=None, Search_Value=None):
+def GET(table_name: str, Look_in_Column=None, Look_for_Value=None, Get_Row="*"):
 
     select_arg = ["*"]
 
-    if column in select_arg:
+    if Get_Row in select_arg:
         pass
-    elif not whitelist_char(column):
-        raise(ValueError(f"Invalid Type: {column}"))
+    elif not whitelist_char(Get_Row):
+        raise(ValueError(f"Invalid Type: {Get_Row}"))
     
     if not whitelist_char(table_name):
         raise(ValueError(f"Invalid Table Name: {table_name}"))
     
-    query = f"SELECT {column} FROM {table_name}"
+    query = f"SELECT {Get_Row} FROM {table_name}"
     params = ()
 
-    if Search_Column and Search_Value is not None:
-        if not whitelist_char(Search_Column): raise ValueError("Invalid Search Column")
+    if Look_in_Column and Look_for_Value is not None:
+        if not whitelist_char(Look_in_Column): raise ValueError("Invalid Search Column")
         
-        query += f" WHERE {Search_Column} = ?"
-        params = (Search_Value,)
+        query += f" WHERE {Look_in_Column} = ?"
+        params = (Look_for_Value,)
     try:
-        DB.row_factory = sqlite3.Row
         CUR.execute(query, params)
         return CUR.fetchall()
     except Exception as e:
         raise(ValueError(f"Could not GET Data. {e}"))
     
+def GET_ONE(table_name, Look_in_Column=None, Look_for_Value=None, Get_Row="*"):
+    # 1. Reuse your existing GET logic
+    results = GET(table_name, Look_in_Column, Look_for_Value, Get_Row)
+    
+    if not results:
+        return None
+
+    first_row = results[0]
+    
+    if Get_Row == "*":
+        return first_row
+    else:
+        return first_row[0]
+
 def UPDATE(table_name, Values: tuple, Column: tuple, Condition:str=None):
 
     # check for unlisted characters
@@ -185,3 +199,60 @@ def UPDATE(table_name, Values: tuple, Column: tuple, Condition:str=None):
         print(f"Internal Trace: {e}")
         raise ValueError("Error Updating Data.")
     
+def DELETE(table_name: str, Look_in_Sub_Category=None, Look_for_Value=None, Condition:str=None):
+
+    if not whitelist_char(table_name): 
+        raise ValueError(f"Invalid Table: {table_name}")
+    
+
+    query = f"DELETE FROM {table_name}"
+    params = ()
+
+    # 2. Reuse the same "Targeting" logic
+    if Look_in_Sub_Category and Look_for_Value is not None:
+        if not whitelist_char(Look_in_Sub_Category): 
+            raise ValueError(f"Invalid Column: {Look_in_Sub_Category}")
+        
+        query += f" WHERE {Look_in_Sub_Category} = ?"
+        params = (Look_for_Value,)
+    
+    # 3. Execute and Commit
+    try:
+        CUR.execute(query, params)
+        DB.commit()
+        return True
+    except Exception as e:
+        print(f"Delete Error: {e}")
+        return False
+    
+def DROP(table_name: str):
+    if not whitelist_char(table_name): 
+        raise ValueError(f"Invalid Table: {table_name}")
+    
+    query = f"DROP TABLE IF EXISTS {table_name}"
+    
+    try:
+        CUR.execute(query)
+        DB.commit()
+        return True
+    except Exception as e:
+        print(f"Drop Failed: {e}")
+        return False
+    
+def EXECUTE(input:str):
+
+    try:
+        CUR.execute(input)
+        DB.commit()
+        return True
+    except Exception as e:
+        raise(ValueError(f"Could not execute custom command: {input}"))
+    
+def STOP():
+    global DB, CUR
+    if DB:
+        DB.commit()
+        DB.close()
+        DB = None
+        CUR = None
+        return True

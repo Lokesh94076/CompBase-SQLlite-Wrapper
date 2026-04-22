@@ -12,8 +12,10 @@ API.CREATE("Marks", ("ID", "Name", "Marks"), ("INTEGER PRIMARY KEY", "TEXT", "RE
 #API.INSERT("Marks", (4, "Mac", 90.4))
 #API.INSERT("Marks", (5, "Amul", 77))
 
-#print(API.GET("Marks", "*"))
+#print(API.GET("Marks"))
 
-API.UPDATE("Marks", (68), ("Marks"), "ID = 5")
+#API.UPDATE("Marks", (68), ("Marks"), "ID = 5")
 
-print(API.GET("Marks", "*", "Name", "Shubh"))
+print(API.GET_ONE("Marks", "Name", "Shubh"))
+
+#API.DROP("Marks")
