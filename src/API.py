@@ -38,37 +38,37 @@ def INIT(folder_name, db_name="Database"):
         print(f"Internal Trace: {e}")
         raise ValueError("Error Creating DB or Cursor.")
 
-def CREATE(Name, Sub_Value: tuple, Sub_Value_Types: tuple= (), Type="TABLE"):
+def CREATE(Table_Name, Column_Names: tuple, Column_Data_Types: tuple= (), Type="TABLE"):
 
-    if isinstance(Sub_Value_Types, str):
-        Sub_Value_Types = [Sub_Value_Types]
+    if isinstance(Column_Data_Types, str):
+        Column_Data_Types = [Column_Data_Types]
         
     # Same for Columns just in case
-    if isinstance(Sub_Value, str):
-        Sub_Value = [Sub_Value]
+    if isinstance(Column_Names, str):
+        Column_Names = [Column_Names]
 
     final_definitions = []
 
     # check for unlisted characters
-    if not whitelist_char(Name):
-        raise ValueError(f"Invalid Table Name: {Name}")
-    for col_def in Sub_Value:
+    if not whitelist_char(Table_Name):
+        raise ValueError(f"Invalid Table Name: {Table_Name}")
+    for col_def in Column_Names:
         parts = col_def.split()
         for part in parts:
             if not whitelist_char(part):
                 raise ValueError(f"Invalid Sub Value part: {part}")
 
 
-    for i in range(len(Sub_Value)):
-        col_name = Sub_Value[i]
+    for i in range(len(Column_Names)):
+        col_name = Column_Names[i]
         
 
         if not whitelist_char(col_name):
             raise ValueError(f"Invalid Column Name: {col_name}")
             
 
-        if i < len(Sub_Value_Types):
-            col_type = Sub_Value_Types[i]
+        if i < len(Column_Data_Types):
+            col_type = Column_Data_Types[i]
         else:
             col_type = "TEXT"
 
@@ -83,7 +83,7 @@ def CREATE(Name, Sub_Value: tuple, Sub_Value_Types: tuple= (), Type="TABLE"):
     Type_upper = str.upper(Type)
     Typ = {"TABLE": "TABLE"}
 
-    query = f"CREATE {Typ[Type_upper]} IF NOT EXISTS {Name} ({col_string})"
+    query = f"CREATE {Typ[Type_upper]} IF NOT EXISTS {Table_Name} ({col_string})"
 
     try:
         CUR.execute(query)
@@ -94,94 +94,93 @@ def CREATE(Name, Sub_Value: tuple, Sub_Value_Types: tuple= (), Type="TABLE"):
     except Exception as e:
         raise e
     
-def INSERT(table_name, Values: tuple, Column: tuple= ()):
+def INSERT(table_name, Row_Data: tuple, Targeted_Columns: tuple= ()):
 
     # check for unlisted characters
-    if isinstance(Values, (str, int, float)): Values = (Values,)
-    if isinstance(Column, str): Column = (Column,)
+    if isinstance(Row_Data, (str, int, float)): Row_Data = (Row_Data,)
+    if isinstance(Targeted_Columns, str): Targeted_Columns = (Targeted_Columns,)
 
     if not whitelist_char(table_name):
         raise ValueError(f"Invalid Table Name: {table_name}")
     
-    Qholder = ", ".join(["?" for _ in Values])
+    Qholder = ", ".join(["?" for _ in Row_Data])
 
-    if len(Column) == 0:
+    if len(Targeted_Columns) == 0:
 
         cols_part = ""
     else:
-        for col in Column:
+        for col in Targeted_Columns:
             if not whitelist_char(col):
                 raise ValueError(f"Invalid Column Name: {col}")
-        cols_part = f"({', '.join(Column)})"
+        cols_part = f"({', '.join(Targeted_Columns)})"
 
     try:
         query = f"INSERT INTO {table_name} {cols_part} VALUES ({Qholder})"
-        CUR.execute(query, Values)
+        CUR.execute(query, Row_Data)
         DB.commit()
+        return True
     except Exception as e:
         print(f"Internal Trace: {e}")
         raise ValueError("Error Inserting Data.")
-
-    return True
-
-def GET(table_name: str, Look_in_Column=None, Look_for_Value=None, Get_Row="*"):
+        
+def GET(table_name: str, Targeted_Columns=None, Look_for_Data=None, Fetch_Columns="*"):
 
     select_arg = ["*"]
 
-    if Get_Row in select_arg:
+    if Fetch_Columns in select_arg:
         pass
-    elif not whitelist_char(Get_Row):
-        raise(ValueError(f"Invalid Type: {Get_Row}"))
+    elif not whitelist_char(Fetch_Columns):
+        raise(ValueError(f"Invalid Type: {Fetch_Columns}"))
     
     if not whitelist_char(table_name):
         raise(ValueError(f"Invalid Table Name: {table_name}"))
     
-    query = f"SELECT {Get_Row} FROM {table_name}"
+    query = f"SELECT {Fetch_Columns} FROM {table_name}"
     params = ()
 
-    if Look_in_Column and Look_for_Value is not None:
-        if not whitelist_char(Look_in_Column): raise ValueError("Invalid Search Column")
+    if Targeted_Columns and Look_for_Data is not None:
+        if not whitelist_char(Targeted_Columns): raise ValueError("Invalid Search Column")
         
-        query += f" WHERE {Look_in_Column} = ?"
-        params = (Look_for_Value,)
+        query += f" WHERE {Targeted_Columns} = ?"
+        params = (Look_for_Data,)
     try:
         CUR.execute(query, params)
         return CUR.fetchall()
     except Exception as e:
         raise(ValueError(f"Could not GET Data. {e}"))
     
-def GET_ONE(table_name, Look_in_Column=None, Look_for_Value=None, Get_Row="*"):
+def GET_ONE(table_name, Look_in_Column=None, Look_for_Data=None, Fetch_Columns="*"):
     # 1. Reuse your existing GET logic
-    results = GET(table_name, Look_in_Column, Look_for_Value, Get_Row)
+    results = GET(table_name, Look_in_Column, Look_for_Data, Fetch_Columns)
     
     if not results:
         return None
 
     first_row = results[0]
     
-    if Get_Row == "*":
+    if Fetch_Columns == "*":
         return first_row
     else:
         return first_row[0]
 
-def UPDATE(table_name, Values: tuple, Column: tuple, Condition:str=None):
+def UPDATE(table_name, New_Row_Data=None, Targeted_Column=None, Condition:str=None):
 
     # check for unlisted characters
-    if isinstance(Values, (str, int, float)): Values = (Values,)
-    if isinstance(Column, str): Column = (Column,)
+    if isinstance(New_Row_Data, (str, int, float)): New_Row_Data = (New_Row_Data,)
+    if isinstance(Targeted_Column, str): Targeted_Column = (Targeted_Column,)
 
-    if len(Values) != len(Column):
-        raise ValueError(f"Counts don't match: {len(Values)} values vs {len(Column)} columns.")
+    if len(New_Row_Data) != len(Targeted_Column):
+        raise ValueError(f"Counts don't match: {len(New_Row_Data)} values vs {len(Targeted_Column)} columns.")
 
-    for i in range(len(Column)):
-        if not whitelist_char(Column[i]):
-            raise ValueError(f"Invalid Column Name: {Column[i]}")
+    for i in range(len(Targeted_Column)):
+        if not whitelist_char(Targeted_Column[i]):
+            raise ValueError(f"Invalid Column Name: {Targeted_Column[i]}")
 
     if not whitelist_char(table_name):
         raise ValueError(f"Invalid Table Name: {table_name}")
     
     
-    set_parts = [f"{col} = ?" for col in Column]
+    set_parts = [f"{col} = ?" for col in Targeted_Column]
     set_string = ", ".join(set_parts)
     
 
@@ -191,15 +190,14 @@ def UPDATE(table_name, Values: tuple, Column: tuple, Condition:str=None):
         query = f"UPDATE {table_name} SET {set_string}"
 
     try:
-        print(query, parse_tuple(Values))
-        CUR.execute(query, Values)
+        CUR.execute(query, New_Row_Data)
         DB.commit()
         return True
     except Exception as e:
         print(f"Internal Trace: {e}")
         raise ValueError("Error Updating Data.")
     
-def DELETE(table_name: str, Look_in_Sub_Category=None, Look_for_Value=None, Condition:str=None):
+def DELETE(table_name: str, Targeted_Column=None, Row_Data=None, Condition:str=None):
 
     if not whitelist_char(table_name): 
         raise ValueError(f"Invalid Table: {table_name}")
@@ -209,12 +207,12 @@ def DELETE(table_name: str, Look_in_Sub_Category=None, Look_for_Value=None, Cond
     params = ()
 
     # 2. Reuse the same "Targeting" logic
-    if Look_in_Sub_Category and Look_for_Value is not None:
-        if not whitelist_char(Look_in_Sub_Category): 
-            raise ValueError(f"Invalid Column: {Look_in_Sub_Category}")
+    if Targeted_Column and Row_Data is not None:
+        if not whitelist_char(Targeted_Column): 
+            raise ValueError(f"Invalid Column: {Targeted_Column}")
         
-        query += f" WHERE {Look_in_Sub_Category} = ?"
-        params = (Look_for_Value,)
+        query += f" WHERE {Targeted_Column} = ?"
+        params = (Row_Data,)
     
     # 3. Execute and Commit
     try:
@@ -239,16 +237,17 @@ def DROP(table_name: str):
         print(f"Drop Failed: {e}")
         return False
     
-def EXECUTE(input:str):
+def EXECUTE(command:str):
 
     try:
-        CUR.execute(input)
+        CUR.execute(command)
         DB.commit()
         return True
     except Exception as e:
-        raise(ValueError(f"Could not execute custom command: {input}"))
+        raise(ValueError(f"Could not execute custom command: {command}"))
     
 def STOP():
+
     global DB, CUR
     if DB:
         DB.commit()
@@ -256,3 +255,4 @@ def STOP():
         DB = None
         CUR = None
         return True
+    
