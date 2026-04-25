@@ -17,7 +17,7 @@ def whitelist_char(value):
             return False
     return True
 
-def INIT(folder_name, db_name="Database"):
+def INIT(folder_name, db_name="Database", check_same_thread:bool=True):
     global DB, CUR, DB_PATH
 
     if not whitelist_char(folder_name):
@@ -30,7 +30,7 @@ def INIT(folder_name, db_name="Database"):
 
     try:
         os.makedirs(TARGET_DIR, exist_ok=True)
-        DB = sqlite3.connect(DB_PATH)
+        DB = sqlite3.connect(DB_PATH, check_same_thread)
         CUR = DB.cursor()
         DB.row_factory = sqlite3.Row
         return True
