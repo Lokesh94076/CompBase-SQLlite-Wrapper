@@ -1,258 +1,264 @@
-import sqlite3
 import os
+import sqlite3
 
-# Get current path
-CURRENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def parse_tuple(data_tuple):
-    return ", ".join(map(str, data_tuple))
+class INIT:
+    def __init__(self, folder_name, db_name="Database", check_same_thread: bool = True):
+        # Base pathing setup relative to file location
+        self.current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def whitelist_char(value):
-    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
-    value_list = list(value)
-    if not value or value[0] in "0123456789":
-        return True
-    for char in value:
-        if char not in allowed:
+        if not self._whitelist_char(folder_name) or not self._whitelist_char(db_name):
+            raise ValueError(f"Invalid Names: {folder_name} or {db_name}.")
+
+        self.target_dir = os.path.join(self.current_dir, folder_name)
+        self.db_path = os.path.join(self.target_dir, f"{db_name}.db")
+
+        try:
+            os.makedirs(self.target_dir, exist_ok=True)
+            self.db = sqlite3.connect(
+                self.db_path, timeout=10, check_same_thread=check_same_thread
+            )
+            self.cur = self.db.cursor()
+            self.db.row_factory = sqlite3.Row
+        except Exception as e:
+            print(f"Internal Trace: {e}")
+            raise RuntimeError(f"Failed to initialize database: {e}")
+
+    def _parse_tuple(self, data_tuple):
+        return ", ".join(map(str, data_tuple))
+
+    def _whitelist_char(self, value):
+        allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+        if not value or value[0] in "0123456789":
             return False
-    return True
+        return all(char in allowed for char in value)
 
-def INIT(folder_name, db_name="Database", check_same_thread:bool=True):
-    global DB, CUR, DB_PATH
+    def CREATE(
+        self,
+        Table_Name,
+        Column_Names,
+        Column_Data_Types=(),
+        Type="TABLE",
+    ):
+        # Normalized inputs safely into local scope variable arrays
+        norm_data_types = (
+            [Column_Data_Types]
+            if isinstance(Column_Data_Types, str)
+            else list(Column_Data_Types)
+        )
+        norm_col_names = (
+            [Column_Names] if isinstance(Column_Names, str) else list(Column_Names)
+        )
 
-    if not whitelist_char(folder_name):
-        raise ValueError(f"Invalid Folder Name: {folder_name}")
-    if not whitelist_char(db_name):
-        raise ValueError(f"Invalid DB Name: {db_name}")
-    
-    TARGET_DIR = os.path.join(CURRENT_DIR, folder_name)
-    DB_PATH = os.path.join(TARGET_DIR, f"{db_name}.db")
+        if not self._whitelist_char(Table_Name):
+            raise ValueError(f"Invalid Table Name: {Table_Name}")
 
-    try:
-        os.makedirs(TARGET_DIR, exist_ok=True)
-        DB = sqlite3.connect(DB_PATH, check_same_thread)
-        CUR = DB.cursor()
-        DB.row_factory = sqlite3.Row
-        return True
-    except Exception as e:
-        print(f"Internal Trace: {e}")
-        raise ValueError("Error Creating DB or Cursor.")
+        final_definitions = []
+        for i in range(len(norm_col_names)):
+            col_name = norm_col_names[i]
 
-def CREATE(Table_Name, Column_Names: tuple, Column_Data_Types: tuple= (), Type="TABLE"):
+            if not self._whitelist_char(col_name):
+                raise ValueError(f"Invalid Column Name: {col_name}")
 
-    if isinstance(Column_Data_Types, str):
-        Column_Data_Types = [Column_Data_Types]
-        
-    # Same for Columns just in case
-    if isinstance(Column_Names, str):
-        Column_Names = [Column_Names]
+            col_type = norm_data_types[i] if i < len(norm_data_types) else "TEXT"
 
-    final_definitions = []
+            for part in col_type.split():
+                if not self._whitelist_char(part):
+                    raise ValueError(f"Invalid Type part: {part}")
 
-    # check for unlisted characters
-    if not whitelist_char(Table_Name):
-        raise ValueError(f"Invalid Table Name: {Table_Name}")
-    for col_def in Column_Names:
-        parts = col_def.split()
-        for part in parts:
-            if not whitelist_char(part):
-                raise ValueError(f"Invalid Sub Value part: {part}")
+            final_definitions.append(f"{col_name} {col_type}")
 
+        col_string = ", ".join(final_definitions)
+        Type_upper = str.upper(Type)
+        Typ = {"TABLE": "TABLE"}
 
-    for i in range(len(Column_Names)):
-        col_name = Column_Names[i]
-        
+        query = f"CREATE {Typ[Type_upper]} IF NOT EXISTS {Table_Name} ({col_string})"
 
-        if not whitelist_char(col_name):
-            raise ValueError(f"Invalid Column Name: {col_name}")
-            
+        try:
+            self.cur.execute(query)
+            self.db.commit()
+            return True
+        except KeyError:
+            raise ValueError(f"Unsupported Type: {Type}")
+        except Exception as e:
+            raise e
 
-        if i < len(Column_Data_Types):
-            col_type = Column_Data_Types[i]
-        else:
-            col_type = "TEXT"
+    def INSERT(self, table_name, Row_Data, Targeted_Columns=()):
+        norm_row_data = (
+            (Row_Data,) if isinstance(Row_Data, (str, int, float)) else Row_Data
+        )
+        norm_targeted_cols = (
+            (Targeted_Columns,)
+            if isinstance(Targeted_Columns, str)
+            else Targeted_Columns
+        )
 
-        for part in col_type.split():
-            if not whitelist_char(part):
-                raise ValueError(f"Invalid Type part: {part}")
+        if not self._whitelist_char(table_name):
+            raise ValueError(f"Invalid Table Name: {table_name}")
 
-
-        final_definitions.append(f"{col_name} {col_type}")
-
-    col_string = ", ".join(final_definitions)
-    Type_upper = str.upper(Type)
-    Typ = {"TABLE": "TABLE"}
-
-    query = f"CREATE {Typ[Type_upper]} IF NOT EXISTS {Table_Name} ({col_string})"
-
-    try:
-        CUR.execute(query)
-        DB.commit()
-        return True
-    except KeyError:
-        raise(ValueError(f"Unsupported Type: {Type}"))
-    except Exception as e:
-        raise e
-    
-def INSERT(table_name, Row_Data: tuple, Targeted_Columns: tuple= ()):
-
-    # check for unlisted characters
-    if isinstance(Row_Data, (str, int, float)): Row_Data = (Row_Data,)
-    if isinstance(Targeted_Columns, str): Targeted_Columns = (Targeted_Columns,)
-
-    if not whitelist_char(table_name):
-        raise ValueError(f"Invalid Table Name: {table_name}")
-    
-    Qholder = ", ".join(["?" for _ in Row_Data])
-
-    if len(Targeted_Columns) == 0:
-
+        Qholder = ", ".join(["?" for _ in norm_row_data])
         cols_part = ""
-    else:
-        for col in Targeted_Columns:
-            if not whitelist_char(col):
+
+        if len(norm_targeted_cols) > 0:
+            for col in norm_targeted_cols:
+                if not self._whitelist_char(col):
+                    raise ValueError(f"Invalid Column Name: {col}")
+            cols_part = f"({', '.join(norm_targeted_cols)})"
+
+        try:
+            query = f"INSERT INTO {table_name} {cols_part} VALUES ({Qholder})"
+            self.cur.execute(query, norm_row_data)
+            self.db.commit()
+            return True
+        except Exception as e:
+            print(f"Internal Trace: {e}")
+            raise ValueError("Error Inserting Data.")
+
+    def GET(
+        self,
+        table_name: str,
+        Targeted_Columns=None,
+        Look_for_Data=None,
+        Fetch_Columns="*",
+    ):
+        if Fetch_Columns != "*" and not self._whitelist_char(Fetch_Columns):
+            raise ValueError(f"Invalid Type: {Fetch_Columns}")
+
+        if not self._whitelist_char(table_name):
+            raise ValueError(f"Invalid Table Name: {table_name}")
+
+        query = f"SELECT {Fetch_Columns} FROM {table_name}"
+        params = ()
+
+        if Targeted_Columns and Look_for_Data is not None:
+            if not self._whitelist_char(Targeted_Columns):
+                raise ValueError("Invalid Search Column")
+
+            query += f" WHERE {Targeted_Columns} = ?"
+            params = (Look_for_Data,)
+
+        try:
+            self.cur.execute(query, params)
+            return self.cur.fetchall()
+        except Exception as e:
+            raise ValueError(f"Could not GET Data. {e}")
+
+    def GET_ONE(
+        self, table_name, Look_in_Column=None, Look_for_Data=None, Fetch_Columns="*"
+    ):
+        results = self.GET(table_name, Look_in_Column, Look_for_Data, Fetch_Columns)
+
+        if not results:
+            return None
+
+        first_row = results[0]
+        return first_row if Fetch_Columns == "*" else first_row[0]
+
+    def UPDATE(
+        self, table_name, New_Row_Data=None, Targeted_Column=None, Condition: str = None
+    ):
+        norm_row_data = (
+            (New_Row_Data,)
+            if isinstance(New_Row_Data, (str, int, float))
+            else New_Row_Data
+        )
+        norm_targeted_col = (
+            (Targeted_Column,) if isinstance(Targeted_Column, str) else Targeted_Column
+        )
+
+        if len(norm_row_data) != len(norm_targeted_col):
+            raise ValueError(
+                f"Counts don't match: {len(norm_row_data)} values vs {len(norm_targeted_col)} columns."
+            )
+
+        for col in norm_targeted_col:
+            if not self._whitelist_char(col):
                 raise ValueError(f"Invalid Column Name: {col}")
-        cols_part = f"({', '.join(Targeted_Columns)})"
 
-    try:
-        query = f"INSERT INTO {table_name} {cols_part} VALUES ({Qholder})"
-        CUR.execute(query, Row_Data)
-        DB.commit()
-        return True
-    except Exception as e:
-        print(f"Internal Trace: {e}")
-        raise ValueError("Error Inserting Data.")
-        
-def GET(table_name: str, Targeted_Columns=None, Look_for_Data=None, Fetch_Columns="*"):
+        if not self._whitelist_char(table_name):
+            raise ValueError(f"Invalid Table Name: {table_name}")
 
-    select_arg = ["*"]
+        set_parts = [f"{col} = ?" for col in norm_targeted_col]
+        set_string = ", ".join(set_parts)
 
-    if Fetch_Columns in select_arg:
-        pass
-    elif not whitelist_char(Fetch_Columns):
-        raise(ValueError(f"Invalid Type: {Fetch_Columns}"))
-    
-    if not whitelist_char(table_name):
-        raise(ValueError(f"Invalid Table Name: {table_name}"))
-    
-    query = f"SELECT {Fetch_Columns} FROM {table_name}"
-    params = ()
+        if Condition:
+            query = f"UPDATE {table_name} SET {set_string} WHERE {Condition}"
+        else:
+            query = f"UPDATE {table_name} SET {set_string}"
 
-    if Targeted_Columns and Look_for_Data is not None:
-        if not whitelist_char(Targeted_Columns): raise ValueError("Invalid Search Column")
-        
-        query += f" WHERE {Targeted_Columns} = ?"
-        params = (Look_for_Data,)
-    try:
-        CUR.execute(query, params)
-        return CUR.fetchall()
-    except Exception as e:
-        raise(ValueError(f"Could not GET Data. {e}"))
-    
-def GET_ONE(table_name, Look_in_Column=None, Look_for_Data=None, Fetch_Columns="*"):
-    # 1. Reuse your existing GET logic
-    results = GET(table_name, Look_in_Column, Look_for_Data, Fetch_Columns)
-    
-    if not results:
-        return None
+        try:
+            self.cur.execute(query, norm_row_data)
+            self.db.commit()
+            return True
+        except Exception as e:
+            print(f"Internal Trace: {e}")
+            raise ValueError("Error Updating Data.")
 
-    first_row = results[0]
-    
-    if Fetch_Columns == "*":
-        return first_row
-    else:
-        return first_row[0]
+    def DELETE(
+        self, table_name: str, Targeted_Column=None, Row_Data=None, Condition: str = ""
+    ):
+        if not self._whitelist_char(table_name):
+            raise ValueError(f"Invalid Table: {table_name}")
 
-def UPDATE(table_name, New_Row_Data=None, Targeted_Column=None, Condition:str=None):
+        query = f"DELETE FROM {table_name}"
+        params = ()
 
-    # check for unlisted characters
-    if isinstance(New_Row_Data, (str, int, float)): New_Row_Data = (New_Row_Data,)
-    if isinstance(Targeted_Column, str): Targeted_Column = (Targeted_Column,)
+        if Targeted_Column and Row_Data is not None:
+            if not self._whitelist_char(Targeted_Column):
+                raise ValueError(f"Invalid Column: {Targeted_Column}")
 
-    if len(New_Row_Data) != len(Targeted_Column):
-        raise ValueError(f"Counts don't match: {len(New_Row_Data)} values vs {len(Targeted_Column)} columns.")
+            # If the user passed a tuple/list of multiple items
+            if isinstance(Row_Data, (tuple, list)) and len(Row_Data) > 1:
+                # Create placeholders like (?, ?) based on how many items are in the tuple
+                placeholders = ", ".join(["?" for _ in Row_Data])
+                query += f" WHERE {Targeted_Column} IN ({placeholders})"
+                params = tuple(Row_Data)  # Pass the whole tuple straight to execute
+            else:
+                # If it's just a single item (unwrap tuple if necessary)
+                actual_data = (
+                    Row_Data[0] if isinstance(Row_Data, (tuple, list)) else Row_Data
+                )
+                query += f" WHERE {Targeted_Column} = ?"
+                params = (actual_data,)
 
-    for i in range(len(Targeted_Column)):
-        if not whitelist_char(Targeted_Column[i]):
-            raise ValueError(f"Invalid Column Name: {Targeted_Column[i]}")
+        elif Condition:
+            query += f" WHERE {Condition}"
 
-    if not whitelist_char(table_name):
-        raise ValueError(f"Invalid Table Name: {table_name}")
-    
-    
-    set_parts = [f"{col} = ?" for col in Targeted_Column]
-    set_string = ", ".join(set_parts)
-    
+        try:
+            self.cur.execute(query, params)
+            self.db.commit()
+            return True
+        except Exception as e:
+            print(f"Delete Error: {e}")
+            return False
 
-    if Condition:
-        query = f"UPDATE {table_name} SET {set_string} WHERE {Condition}"
-    else:
-        query = f"UPDATE {table_name} SET {set_string}"
+    def DROP(self, table_name: str):
+        if not self._whitelist_char(table_name):
+            raise ValueError(f"Invalid Table: {table_name}")
 
-    try:
-        CUR.execute(query, New_Row_Data)
-        DB.commit()
-        return True
-    except Exception as e:
-        print(f"Internal Trace: {e}")
-        raise ValueError("Error Updating Data.")
-    
-def DELETE(table_name: str, Targeted_Column=None, Row_Data=None, Condition:str=None):
+        query = f"DROP TABLE IF EXISTS {table_name}"
 
-    if not whitelist_char(table_name): 
-        raise ValueError(f"Invalid Table: {table_name}")
-    
+        try:
+            self.cur.execute(query)
+            self.db.commit()
+            return True
+        except Exception as e:
+            print(f"Drop Failed: {e}")
+            return False
 
-    query = f"DELETE FROM {table_name}"
-    params = ()
+    def EXECUTE(self, command: str):
+        try:
+            self.cur.execute(command)
+            self.db.commit()
+            return True
+        except Exception as e:
+            raise ValueError(f"Could not execute custom command: {command}. Trace: {e}")
 
-    # 2. Reuse the same "Targeting" logic
-    if Targeted_Column and Row_Data is not None:
-        if not whitelist_char(Targeted_Column): 
-            raise ValueError(f"Invalid Column: {Targeted_Column}")
-        
-        query += f" WHERE {Targeted_Column} = ?"
-        params = (Row_Data,)
-    
-    # 3. Execute and Commit
-    try:
-        CUR.execute(query, params)
-        DB.commit()
-        return True
-    except Exception as e:
-        print(f"Delete Error: {e}")
+    def STOP(self):
+        if self.db:
+            self.db.commit()
+            self.db.close()
+            self.db = None
+            self.cur = None
+            return True
         return False
-    
-def DROP(table_name: str):
-    if not whitelist_char(table_name): 
-        raise ValueError(f"Invalid Table: {table_name}")
-    
-    query = f"DROP TABLE IF EXISTS {table_name}"
-    
-    try:
-        CUR.execute(query)
-        DB.commit()
-        return True
-    except Exception as e:
-        print(f"Drop Failed: {e}")
-        return False
-    
-def EXECUTE(command:str):
-
-    try:
-        CUR.execute(command)
-        DB.commit()
-        return True
-    except Exception as e:
-        raise(ValueError(f"Could not execute custom command: {command}"))
-    
-def STOP():
-
-    global DB, CUR
-    if DB:
-        DB.commit()
-        DB.close()
-        DB = None
-        CUR = None
-        return True
-    
